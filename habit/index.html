@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A simple habit tracking application to build better routines">
+    <meta name="theme-color" content="#4CAF50">
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <title>Habit Tracker</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Habit Tracker</h1>
+            <p class="subtitle">Build better habits, one day at a time</p>
+            <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode">🌙</button>
+        </header>
+
+        <main>
+            <!-- Install Prompt (hidden by default) -->
+            <div id="install-prompt" class="install-prompt hidden">
+                <div class="install-prompt-content">
+                    <span class="install-icon">📱</span>
+                    <span class="install-text">Install Habit Tracker for quick access</span>
+                    <button id="install-btn" class="btn btn-primary btn-sm">Install</button>
+                    <button id="install-dismiss" class="btn-close" title="Dismiss">×</button>
+                </div>
+            </div>
+            
+            <section class="add-habit-section">
+                <button id="add-habit-btn" class="btn btn-primary">+ Add Habit</button>
+                <button id="settings-btn" class="btn btn-secondary">⚙ Settings</button>
+            </section>
+
+            <section class="habits-section">
+                <div id="habits-list" class="habits-list">
+                    <!-- Habit cards will be rendered here -->
+                </div>
+                <div id="empty-state" class="empty-state">
+                    <p>No habits yet. Click "Add Habit" to get started!</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Habit Tracker</p>
+        </footer>
+    </div>
+
+    <!-- Add Habit Modal -->
+    <div id="add-habit-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add New Habit</h2>
+            <form id="add-habit-form">
+                <div class="form-group">
+                    <label for="habit-name">Habit Name</label>
+                    <input type="text" id="habit-name" name="habit-name" required placeholder="e.g., Exercise, Read, Meditate">
+                </div>
+                
+                <div class="form-group">
+                    <label for="notification-time">Notification Time (optional)</label>
+                    <input type="time" id="notification-time" name="notification-time">
+                </div>
+                
+                <div class="form-group">
+                    <label for="habit-notes">Notes (optional)</label>
+                    <textarea id="habit-notes" name="habit-notes" rows="3" placeholder="Add any notes or description for this habit..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="habit-tags">Tags (optional)</label>
+                    <input type="text" id="habit-tags" name="habit-tags" placeholder="health, productivity, mindfulness (comma-separated)">
+                    <small class="form-hint">Separate tags with commas</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Days of Week (leave blank for daily)</label>
+                    <div class="days-selector">
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="0"> Sun
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="1"> Mon
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="2"> Tue
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="3"> Wed
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="4"> Thu
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="5"> Fri
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="day" value="6"> Sat
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary">Add Habit</button>
+                    <button type="button" id="cancel-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Habit Modal -->
+    <div id="edit-habit-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Edit Habit</h2>
+            <form id="edit-habit-form">
+                <div class="form-group">
+                    <label for="edit-habit-name">Habit Name</label>
+                    <input type="text" id="edit-habit-name" name="edit-habit-name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-notification-time">Notification Time (optional)</label>
+                    <input type="time" id="edit-notification-time" name="edit-notification-time">
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-habit-notes">Notes (optional)</label>
+                    <textarea id="edit-habit-notes" name="edit-habit-notes" rows="3" placeholder="Add any notes or description for this habit..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-habit-tags">Tags (optional)</label>
+                    <input type="text" id="edit-habit-tags" name="edit-habit-tags" placeholder="health, productivity, mindfulness (comma-separated)">
+                    <small class="form-hint">Separate tags with commas</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Days of Week (leave blank for daily)</label>
+                    <div class="days-selector">
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="0"> Sun
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="1"> Mon
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="2"> Tue
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="3"> Wed
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="4"> Thu
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="5"> Fri
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="edit-day" value="6"> Sat
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" id="edit-cancel-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Settings</h2>
+            <div class="settings-section">
+                <h3>Notifications</h3>
+                <div id="notification-status"></div>
+                <button id="enable-notifications-btn" class="btn btn-secondary">🔔 Enable Notifications</button>
+                <button id="test-notification-btn" class="btn btn-secondary" style="margin-top: 8px;">🧪 Test Notification</button>
+                <p class="settings-help">Get reminders when it's time to complete your habits</p>
+            </div>
+            <div class="settings-section">
+                <h3>Data Management</h3>
+                <button id="export-btn" class="btn btn-secondary">📥 Export Data</button>
+                <button id="import-btn" class="btn btn-secondary">📤 Import Data</button>
+                <input type="file" id="import-file" accept=".json" style="display: none;">
+            </div>
+            <div class="settings-section">
+                <h3>Danger Zone</h3>
+                <button id="clear-data-btn" class="btn btn-danger">🗑️ Clear All Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Modules -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
