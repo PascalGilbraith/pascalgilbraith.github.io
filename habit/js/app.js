@@ -7,6 +7,7 @@ import { Habit } from './habit.js';
 import * as Storage from './storage.js';
 import * as UI from './ui.js';
 import * as Notifications from './notifications.js';
+import { _localDateStr } from './ui.js';
 
 // Application state
 let habits = [];
@@ -70,11 +71,15 @@ function loadHabits() {
  * Save habits to storage
  */
 function saveHabits() {
-    const success = Storage.saveHabits(habits);
-    if (!success) {
+    const result = Storage.saveHabits(habits);
+    if (result && typeof result === 'object' && result.error === 'quota') {
+        UI.showNotification('Storage is full! Try deleting old habits or exporting data.', 'error');
+        return false;
+    }
+    if (!result) {
         UI.showNotification('Failed to save habits', 'error');
     }
-    return success;
+    return !!result;
 }
 
 /**
@@ -323,7 +328,8 @@ function handleHabitComplete(habitId, shouldComplete) {
             return;
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const today = _localDateStr(now);
 
     if (shouldComplete) {
         habit.markCompleted(today);
@@ -461,13 +467,61 @@ function handleEditHabitSubmit(e) {
 }
 
 /**
+ * Handle toggling completion for a past date in history view.
+ * Prompts the user to be honest before making changes.
+ */
+function handleHistoryToggle(habitId, dateStr) {
+    try {
+        if (!habitId || !dateStr) {
+            throw new Error('Invalid habit ID or date');
+        }
+
+        const habit = habits.find(h => h.id === habitId);
+        if (!habit) {
+            UI.showNotification('Habit not found', 'error');
+            return;
+        }
+
+        const isCurrentlyCompleted = habit.isCompletedOn(dateStr);
+        const action = isCurrentlyCompleted ? 'remove completion for' : 'mark as completed on';
+
+        const confirmed = confirm(
+            `⚠️ Be honest with yourself!\n\n` +
+            `You are about to ${action} ${dateStr}.\n\n` +
+            `Editing history should only be used to correct mistakes, ` +
+            `not to inflate your progress. Your habits only work if your data is truthful.\n\n` +
+            `Do you want to continue?`
+        );
+
+        if (!confirmed) return;
+
+        if (isCurrentlyCompleted) {
+            habit.markIncomplete(dateStr);
+            UI.showNotification(`Removed completion for "${habit.name}" on ${dateStr}`, 'info');
+        } else {
+            habit.markCompleted(dateStr);
+            UI.showNotification(`Marked "${habit.name}" as completed on ${dateStr}`, 'success');
+        }
+
+        if (saveHabits()) {
+            const callbacks = getCallbacks();
+            UI.updateHabitCard(habitId, habit, callbacks);
+        }
+    } catch (error) {
+        console.error('Error toggling history completion:', error);
+        UI.showNotification('Failed to update history. Please try again.', 'error');
+    }
+}
+
+/**
  * Get callback functions for UI components
  */
 function getCallbacks() {
     return {
         onComplete: handleHabitComplete,
         onDelete: handleHabitDelete,
-        onEdit: handleHabitEdit
+        onEdit: handleHabitEdit,
+        onHistoryToggle: handleHistoryToggle
     };
 }
 
@@ -920,7 +974,8 @@ function getAppStats() {
 
     const activeToday = habits.filter(h => h.isActiveOnDay(new Date())).length;
 
-    const today = new Date().toISOString().split('T')[0];
+    const now2 = new Date();
+    const today = _localDateStr(now2);
     const completedToday = habits.filter(h => h.isCompletedOn(today)).length;
 
     return {

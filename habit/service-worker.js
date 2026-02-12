@@ -1,7 +1,9 @@
 // Service Worker for Habit Tracker PWA
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'habit-tracker-v1';
+// CACHE_VERSION should be bumped on each deploy to bust stale caches
+const CACHE_VERSION = '2';
+const CACHE_NAME = `habit-tracker-v${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

@@ -54,35 +54,39 @@ export function renderHabitCard(habit, callbacks = {}) {
     card.dataset.habitId = habit.id;
 
     // Build the card HTML
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = _localDateStr(now);
     const isCompleted = habit.isCompletedOn(today);
     const stats = habit.getStatistics();
-    const isActiveToday = habit.isActiveOnDay(new Date());
+    const isActiveToday = habit.isActiveOnDay(now);
+    const safeId = escapeAttr(habit.id);
+    const safeNotifTime = habit.notificationTime ? escapeAttr(habit.notificationTime) : '';
 
     card.innerHTML = `
         <div class="habit-header">
-            <h3 class="habit-name">${escapeHtml(habit.name)}</h3>
+            <div class="habit-title-row">
+                <h3 class="habit-name">${escapeHtml(habit.name)}</h3>
+                ${habit.tags && habit.tags.length > 0 ? `<div class="habit-tags">${habit.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+            </div>
             <div class="habit-actions-header">
-                <button class="habit-edit" data-habit-id="${habit.id}" title="Edit habit">✎</button>
-                <button class="habit-delete" data-habit-id="${habit.id}" title="Delete habit">×</button>
+                <button class="habit-edit" data-habit-id="${safeId}" title="Edit habit" aria-label="Edit ${escapeAttr(habit.name)}">✎</button>
+                <button class="habit-delete" data-habit-id="${safeId}" title="Delete habit" aria-label="Delete ${escapeAttr(habit.name)}">×</button>
             </div>
         </div>
-        
-        ${habit.tags && habit.tags.length > 0 ? `<div class="habit-tags">${habit.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
         
         ${habit.notes ? `<div class="habit-notes">${escapeHtml(habit.notes)}</div>` : ''}
         
         <div class="habit-info">
             <span class="habit-streak" title="Current streak">🔥 ${stats.currentStreak} day${stats.currentStreak !== 1 ? 's' : ''}</span>
             <span class="habit-completion-rate" title="Completion rate">${stats.completionRate}%</span>
-            ${habit.notificationTime ? `<span class="habit-notification" title="Notification time">🔔 ${habit.notificationTime}</span>` : ''}
+            ${habit.notificationTime ? `<span class="habit-notification" title="Notification time">🔔 ${safeNotifTime}</span>` : ''}
         </div>
         
         ${renderDaysOfWeek(habit)}
         
         <div class="habit-actions">
             <button class="complete-btn ${isCompleted ? 'completed' : ''} ${!isActiveToday ? 'disabled' : ''}" 
-                    data-habit-id="${habit.id}"
+                    data-habit-id="${safeId}"
                     ${!isActiveToday ? 'disabled' : ''}>
                 ${isCompleted ? '✓ Completed Today' : (isActiveToday ? 'Mark Complete' : 'Not Scheduled Today')}
             </button>
@@ -133,6 +137,31 @@ export function renderHabitCard(habit, callbacks = {}) {
         });
     }
 
+    // Attach click handlers to active calendar days for history editing
+    if (callbacks.onHistoryToggle) {
+        card.querySelectorAll('.calendar-day:not(.inactive)').forEach(dayEl => {
+            dayEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const date = dayEl.dataset.date;
+                const hId = dayEl.dataset.habitId;
+                if (date && hId) {
+                    callbacks.onHistoryToggle(hId, date);
+                }
+            });
+            dayEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const date = dayEl.dataset.date;
+                    const hId = dayEl.dataset.habitId;
+                    if (date && hId) {
+                        callbacks.onHistoryToggle(hId, date);
+                    }
+                }
+            });
+        });
+    }
+
     return card;
 }
 
@@ -169,7 +198,7 @@ function renderCalendar(habit, days = 30) {
     for (let i = days - 1; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = _localDateStr(date);
         const isCompleted = habit.isCompletedOn(dateStr);
         const isToday = i === 0;
         const dayOfWeek = date.getDay();
@@ -184,9 +213,12 @@ function renderCalendar(habit, days = 30) {
         });
     }
     
+    const safeHabitId = escapeAttr(habit.id);
     const calendarHtml = calendar.map(day => `
         <div class="calendar-day ${day.isCompleted ? 'completed' : ''} ${day.isToday ? 'today' : ''} ${!day.isActive ? 'inactive' : ''}" 
-             title="${day.date}${!day.isActive ? ' (not scheduled)' : ''}">
+             title="${day.date}${!day.isActive ? ' (not scheduled)' : ''}"
+             data-date="${day.date}" data-habit-id="${safeHabitId}"
+             ${day.isActive ? 'role="button" tabindex="0" aria-label="' + day.date + (day.isCompleted ? ' completed' : ' not completed') + '"' : ''}>
             <span class="day-number">${day.day}</span>
             ${day.isCompleted ? '<span class="check-mark">✓</span>' : ''}
         </div>
@@ -216,25 +248,37 @@ function showEmptyState(container) {
     }
 }
 
+/** @type {HTMLElement|null} Element that had focus before modal opened */
+let _previouslyFocusedElement = null;
+
+/** @type {Function|null} Active focus trap keydown handler */
+let _focusTrapHandler = null;
+
 /**
- * Show a modal
+ * Show a modal with focus trapping for accessibility
  * @param {string} modalId - ID of the modal to show
  */
 export function showModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
+        // Store the element that had focus before modal opened
+        _previouslyFocusedElement = document.activeElement;
+
         modal.classList.remove('hidden');
         
-        // Focus first input
-        const firstInput = modal.querySelector('input, textarea');
+        // Focus first focusable element
+        const firstInput = modal.querySelector('input, textarea, button, select, [tabindex]:not([tabindex="-1"])');
         if (firstInput) {
             setTimeout(() => firstInput.focus(), 100);
         }
+
+        // Set up focus trap
+        _setupFocusTrap(modal);
     }
 }
 
 /**
- * Hide a modal
+ * Hide a modal and restore focus
  * @param {string} modalId - ID of the modal to hide
  */
 export function hideModal(modalId) {
@@ -247,6 +291,62 @@ export function hideModal(modalId) {
         if (form) {
             form.reset();
         }
+
+        // Remove focus trap
+        _removeFocusTrap(modal);
+
+        // Restore focus to the element that triggered the modal
+        if (_previouslyFocusedElement && document.body.contains(_previouslyFocusedElement)) {
+            _previouslyFocusedElement.focus();
+            _previouslyFocusedElement = null;
+        }
+    }
+}
+
+/**
+ * Set up a focus trap within a modal element
+ * @param {HTMLElement} modal - The modal element to trap focus within
+ * @private
+ */
+function _setupFocusTrap(modal) {
+    _removeFocusTrap(modal);
+
+    _focusTrapHandler = (e) => {
+        if (e.key !== 'Tab') return;
+
+        const focusableSelectors = 'input:not([disabled]), textarea:not([disabled]), button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), a[href]';
+        const focusable = Array.from(modal.querySelectorAll(focusableSelectors)).filter(el => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+            if (document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            }
+        } else {
+            if (document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+    };
+
+    modal.addEventListener('keydown', _focusTrapHandler);
+}
+
+/**
+ * Remove focus trap from a modal
+ * @param {HTMLElement} modal - The modal element
+ * @private
+ */
+function _removeFocusTrap(modal) {
+    if (_focusTrapHandler) {
+        modal.removeEventListener('keydown', _focusTrapHandler);
+        _focusTrapHandler = null;
     }
 }
 
@@ -379,6 +479,8 @@ export function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
+    notification.setAttribute('role', 'alert');
+    notification.setAttribute('aria-live', 'polite');
     notification.style.cssText = `
         position: fixed;
         top: 20px;
@@ -402,14 +504,33 @@ export function showNotification(message, type = 'info') {
 }
 
 /**
- * Escape HTML to prevent XSS
+ * Escape HTML to prevent XSS in text content
  * @param {string} text - Text to escape
  * @returns {string} Escaped text
  */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+export function escapeHtml(text) {
+    if (typeof text !== 'string') return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
+ * Escape a string for safe use in HTML attribute values
+ * @param {string} text - Text to escape for attribute context
+ * @returns {string} Escaped text safe for attributes
+ */
+export function escapeAttr(text) {
+    if (typeof text !== 'string') return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 /**
@@ -491,6 +612,18 @@ export function populateEditForm(habit) {
  * @param {HTMLFormElement} form - The form element
  * @returns {Object} Form data object
  */
+/**
+ * Get a local date string (YYYY-MM-DD) avoiding UTC timezone issues
+ * @param {Date} date - Date object to format
+ * @returns {string} Local date string in YYYY-MM-DD format
+ */
+export function _localDateStr(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export function getHabitFormData(form) {
     if (!form) return null;
 

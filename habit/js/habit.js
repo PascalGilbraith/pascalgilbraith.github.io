@@ -18,6 +18,8 @@ export class Habit {
         this.name = name;
         this.createdDate = createdDate || new Date().toISOString().split('T')[0];
         this.completions = completions || [];
+        /** @type {Set<string>} Cached Set for O(1) completion lookups */
+        this._completionSet = new Set(this.completions);
         this.notificationTime = notificationTime;
         this.daysOfWeek = daysOfWeek; // null means all days, array means specific days
         this.notes = notes || '';
@@ -30,7 +32,10 @@ export class Habit {
      * @private
      */
     _generateId() {
-        return `habit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return `habit_${crypto.randomUUID()}`;
+        }
+        return `habit_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     }
 
     /**
@@ -39,9 +44,10 @@ export class Habit {
      */
     markCompleted(date) {
         const dateStr = this._normalizeDate(date);
-        if (!this.completions.includes(dateStr)) {
+        if (!this._completionSet.has(dateStr)) {
             this.completions.push(dateStr);
-            this.completions.sort(); // Keep completions sorted chronologically
+            this.completions.sort();
+            this._completionSet.add(dateStr);
         }
     }
 
@@ -54,6 +60,7 @@ export class Habit {
         const index = this.completions.indexOf(dateStr);
         if (index > -1) {
             this.completions.splice(index, 1);
+            this._completionSet.delete(dateStr);
         }
     }
 
@@ -64,7 +71,7 @@ export class Habit {
      */
     isCompletedOn(date) {
         const dateStr = this._normalizeDate(date);
-        return this.completions.includes(dateStr);
+        return this._completionSet.has(dateStr);
     }
 
     /**

@@ -271,30 +271,42 @@ main {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--spacing-sm);
     margin-bottom: var(--spacing-sm);
+}
+
+.habit-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    flex: 1;
 }
 
 .habit-name {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
+    margin: 0;
 }
 
 .habit-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: var(--spacing-sm) 0;
+    gap: 0.3rem;
+    align-items: center;
 }
 
 .tag {
     display: inline-block;
-    padding: 0.25rem 0.75rem;
+    padding: 0.15rem 0.55rem;
     background: var(--primary-light);
     color: var(--primary-color);
     border-radius: 1rem;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 .habit-notes {
@@ -442,6 +454,21 @@ main {
     font-size: 0.75rem;
     position: relative;
     transition: all var(--transition);
+}
+
+.calendar-day:not(.inactive) {
+    cursor: pointer;
+}
+
+.calendar-day:not(.inactive):hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1;
+}
+
+.calendar-day:not(.inactive):focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 .calendar-day.inactive {
@@ -637,13 +664,11 @@ footer {
     }
     
     .habit-header {
-        flex-wrap: wrap;
         gap: var(--spacing-xs);
     }
     
     .habit-name {
         font-size: 1.1rem;
-        flex-basis: 100%;
     }
     
     .habit-info {
@@ -725,9 +750,18 @@ footer {
         padding: 2px;
     }
     
+    .habit-actions-header {
+        flex-shrink: 0;
+    }
+
+    .habit-actions-header button {
+        padding: 0.2rem;
+        font-size: 1rem;
+    }
+
     .tag {
-        font-size: 0.75rem;
-        padding: 0.15rem 0.4rem;
+        font-size: 0.65rem;
+        padding: 0.1rem 0.35rem;
     }
 }
 
@@ -788,17 +822,6 @@ footer {
     to {
         opacity: 0;
         transform: scale(0.95);
-    }
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
     }
 }
 
@@ -927,7 +950,7 @@ textarea:focus-visible {
     background: #2196F3;
 }
 
-/* Animations */
+/* Notification animations — uses translateX(400px) for the toast slide effect */
 @keyframes slideIn {
     from {
         transform: translateX(400px);
@@ -963,14 +986,14 @@ textarea:focus-visible {
 .settings-section {
     margin: 2rem 0;
     padding: 1.5rem;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--border-radius);
 }
 
 .settings-section h3 {
     margin-top: 0;
     margin-bottom: 1rem;
-    color: var(--text-color);
+    color: var(--text-primary);
 }
 
 .settings-section .btn {

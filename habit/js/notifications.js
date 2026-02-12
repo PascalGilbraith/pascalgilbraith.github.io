@@ -85,6 +85,9 @@ export function showNotification(title, options = {}) {
     }
 }
 
+/** Track last notification time per habit to prevent duplicates */
+const _lastNotifiedMinute = new Map();
+
 /**
  * Check if a habit should trigger a notification
  * @param {Object} habit - Habit object with notificationTime, completions, and daysOfWeek
@@ -100,7 +103,10 @@ export function shouldNotifyForHabit(habit) {
     }
 
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`;
     console.log(`[Notifications] - Current time: ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}, Notification time: ${habit.notificationTime}`);
     
     // Check if habit is active today
@@ -122,6 +128,22 @@ export function shouldNotifyForHabit(habit) {
 
     // Check if we're within the notification minute
     if (currentHour === notifHour && currentMinute === notifMinute) {
+        // Deduplication: only fire once per habit per day+minute
+        const dedupeKey = `${habit.id}_${today}_${notifHour}:${notifMinute}`;
+        if (_lastNotifiedMinute.has(dedupeKey)) {
+            console.log(`[Notifications] - Already notified this minute (deduplicated)`);
+            return false;
+        }
+        _lastNotifiedMinute.set(dedupeKey, true);
+
+        // Clean up old entries (keep map from growing)
+        if (_lastNotifiedMinute.size > 100) {
+            const keys = Array.from(_lastNotifiedMinute.keys());
+            for (let i = 0; i < keys.length - 50; i++) {
+                _lastNotifiedMinute.delete(keys[i]);
+            }
+        }
+
         console.log(`[Notifications] - ✓ Time matches! Showing notification`);
         return true;
     }

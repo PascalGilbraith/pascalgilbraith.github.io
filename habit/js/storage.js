@@ -22,9 +22,19 @@ export function saveHabits(habits) {
 
         // Convert habits to plain objects
         const habitsData = habits.map(habit => habit.toJSON());
+        const jsonString = JSON.stringify(habitsData);
         
-        // Save to localStorage
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(habitsData));
+        // Save to localStorage with quota check
+        try {
+            localStorage.setItem(STORAGE_KEY, jsonString);
+        } catch (storageError) {
+            // Likely QuotaExceededError
+            if (storageError.name === 'QuotaExceededError' || storageError.code === 22) {
+                console.error('localStorage quota exceeded:', storageError);
+                return { success: false, error: 'quota' };
+            }
+            throw storageError;
+        }
         localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
         
         return true;
@@ -223,6 +233,75 @@ export function exportData() {
 }
 
 /**
+ * Validate a single habit data object before import
+ * @param {Object} h - Raw habit data object
+ * @returns {Object} Object with { valid: boolean, errors: string[] }
+ */
+function validateHabitData(h) {
+    const errors = [];
+    
+    if (!h || typeof h !== 'object') {
+        return { valid: false, errors: ['Habit entry is not an object'] };
+    }
+
+    // Required fields
+    if (typeof h.name !== 'string' || h.name.trim().length === 0) {
+        errors.push('Missing or invalid habit name');
+    } else if (h.name.length > 200) {
+        errors.push('Habit name exceeds maximum length');
+    }
+
+    // ID validation (must be a simple string, no HTML/script)
+    if (h.id !== undefined && h.id !== null) {
+        if (typeof h.id !== 'string' || h.id.length > 100 || /[<>"'&]/.test(h.id)) {
+            errors.push('Invalid habit ID format');
+        }
+    }
+
+    // Completions validation
+    if (h.completions !== undefined && h.completions !== null) {
+        if (!Array.isArray(h.completions)) {
+            errors.push('Completions must be an array');
+        } else {
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            const invalidDates = h.completions.filter(c => typeof c !== 'string' || !dateRegex.test(c));
+            if (invalidDates.length > 0) {
+                errors.push(`${invalidDates.length} invalid date(s) in completions`);
+            }
+        }
+    }
+
+    // Notification time validation
+    if (h.notificationTime !== undefined && h.notificationTime !== null && h.notificationTime !== '') {
+        const timeRegex = /^([0-1][0-9]|2[0-3]):([0-5][0-9])$/;
+        if (typeof h.notificationTime !== 'string' || !timeRegex.test(h.notificationTime)) {
+            errors.push('Invalid notification time format (expected HH:MM)');
+        }
+    }
+
+    // Days of week validation
+    if (h.daysOfWeek !== undefined && h.daysOfWeek !== null) {
+        if (!Array.isArray(h.daysOfWeek) || !h.daysOfWeek.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+            errors.push('Invalid daysOfWeek (expected array of integers 0-6)');
+        }
+    }
+
+    // Notes validation
+    if (h.notes !== undefined && h.notes !== null && typeof h.notes !== 'string') {
+        errors.push('Notes must be a string');
+    }
+
+    // Tags validation
+    if (h.tags !== undefined && h.tags !== null) {
+        if (!Array.isArray(h.tags) || !h.tags.every(t => typeof t === 'string')) {
+            errors.push('Tags must be an array of strings');
+        }
+    }
+
+    return { valid: errors.length === 0, errors };
+}
+
+/**
  * Import habits data from JSON string
  * @param {string} jsonString - JSON string containing habits data
  * @param {boolean} merge - If true, merge with existing data; if false, replace
@@ -235,6 +314,18 @@ export function importData(jsonString, merge = false) {
         // Validate the data structure
         if (!data.habits || !Array.isArray(data.habits)) {
             throw new Error('Invalid data format: missing habits array');
+        }
+
+        // Validate each habit before importing
+        const validationResults = data.habits.map((h, i) => ({
+            index: i,
+            ...validateHabitData(h)
+        }));
+
+        const invalid = validationResults.filter(r => !r.valid);
+        if (invalid.length > 0) {
+            const details = invalid.map(r => `Habit ${r.index + 1}: ${r.errors.join(', ')}`).join('; ');
+            throw new Error(`Invalid habit data: ${details}`);
         }
 
         // Convert to Habit instances

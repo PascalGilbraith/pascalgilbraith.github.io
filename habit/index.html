@@ -21,7 +21,7 @@
         <header>
             <h1>Habit Tracker</h1>
             <p class="subtitle">Build better habits, one day at a time</p>
-            <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode">🌙</button>
+            <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
         </header>
 
         <main>
@@ -56,9 +56,9 @@
     </div>
 
     <!-- Add Habit Modal -->
-    <div id="add-habit-modal" class="modal hidden">
+    <div id="add-habit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-habit-title">
         <div class="modal-content">
-            <h2>Add New Habit</h2>
+            <h2 id="add-habit-title">Add New Habit</h2>
             <form id="add-habit-form">
                 <div class="form-group">
                     <label for="habit-name">Habit Name</label>
@@ -117,9 +117,9 @@
     </div>
 
     <!-- Edit Habit Modal -->
-    <div id="edit-habit-modal" class="modal hidden">
+    <div id="edit-habit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-habit-title">
         <div class="modal-content">
-            <h2>Edit Habit</h2>
+            <h2 id="edit-habit-title">Edit Habit</h2>
             <form id="edit-habit-form">
                 <div class="form-group">
                     <label for="edit-habit-name">Habit Name</label>
@@ -178,10 +178,10 @@
     </div>
 
     <!-- Settings Modal -->
-    <div id="settings-modal" class="modal hidden">
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Settings</h2>
+            <span class="close" aria-label="Close settings">&times;</span>
+            <h2 id="settings-title">Settings</h2>
             <div class="settings-section">
                 <h3>Notifications</h3>
                 <div id="notification-status"></div>
