@@ -24,6 +24,7 @@ export class Habit {
         this.daysOfWeek = daysOfWeek; // null means all days, array means specific days
         this.notes = notes || '';
         this.tags = tags || [];
+        this.order = 0;
     }
 
     /**
@@ -330,6 +331,7 @@ export class Habit {
 
     /**
      * Convert habit to plain object for storage
+     * Uses date range compression for completions to reduce storage size
      * @returns {Object} Plain object representation
      */
     toJSON() {
@@ -337,31 +339,101 @@ export class Habit {
             id: this.id,
             name: this.name,
             createdDate: this.createdDate,
-            completions: this.completions,
+            completions: Habit.compressCompletions(this.completions),
             notificationTime: this.notificationTime,
             daysOfWeek: this.daysOfWeek,
             notes: this.notes,
-            tags: this.tags
+            tags: this.tags,
+            order: this.order
         };
     }
 
     /**
      * Create a Habit instance from a plain object
+     * Handles both legacy (individual dates) and new (range-compressed) formats
      * @param {Object} obj - Plain object with habit data
      * @returns {Habit} New Habit instance
      * @static
      */
     static fromJSON(obj) {
+        const completions = Habit.expandCompletions(obj.completions || []);
         const habit = new Habit(
             obj.name,
             obj.createdDate,
-            obj.completions,
+            completions,
             obj.notificationTime,
             obj.daysOfWeek,
             obj.notes,
             obj.tags
         );
         habit.id = obj.id;
+        habit.order = (typeof obj.order === 'number') ? obj.order : 0;
         return habit;
+    }
+
+    /**
+     * Compress an array of sorted date strings into ranges.
+     * Consecutive dates become "YYYY-MM-DD:YYYY-MM-DD", single dates stay as-is.
+     * @param {Array<string>} completions - Sorted array of YYYY-MM-DD strings
+     * @returns {Array<string>} Compressed array with ranges
+     * @static
+     */
+    static compressCompletions(completions) {
+        if (!completions || completions.length === 0) return [];
+        const sorted = [...completions].sort();
+        const result = [];
+        let rangeStart = sorted[0];
+        let rangeEnd = sorted[0];
+
+        for (let i = 1; i < sorted.length; i++) {
+            // Check if current date is exactly one day after rangeEnd
+            // Use date component math to avoid DST issues
+            const prevParts = rangeEnd.split('-');
+            const prev = new Date(parseInt(prevParts[0]), parseInt(prevParts[1]) - 1, parseInt(prevParts[2]));
+            prev.setDate(prev.getDate() + 1);
+            const nextDay = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+
+            if (sorted[i] === nextDay) {
+                // Consecutive day
+                rangeEnd = sorted[i];
+            } else {
+                // Gap found — push previous range
+                result.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart}:${rangeEnd}`);
+                rangeStart = sorted[i];
+                rangeEnd = sorted[i];
+            }
+        }
+        // Push last range
+        result.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart}:${rangeEnd}`);
+        return result;
+    }
+
+    /**
+     * Expand a compressed completions array back to individual date strings.
+     * Handles both legacy (all individual dates) and new (range) formats.
+     * @param {Array<string>} compressed - Array of date strings or "start:end" ranges
+     * @returns {Array<string>} Sorted array of individual YYYY-MM-DD strings
+     * @static
+     */
+    static expandCompletions(compressed) {
+        if (!compressed || compressed.length === 0) return [];
+        const dates = [];
+        for (const entry of compressed) {
+            if (entry.includes(':')) {
+                const [start, end] = entry.split(':');
+                const current = new Date(start + 'T00:00:00');
+                const endDate = new Date(end + 'T00:00:00');
+                while (current <= endDate) {
+                    const y = current.getFullYear();
+                    const m = String(current.getMonth() + 1).padStart(2, '0');
+                    const d = String(current.getDate()).padStart(2, '0');
+                    dates.push(`${y}-${m}-${d}`);
+                    current.setDate(current.getDate() + 1);
+                }
+            } else {
+                dates.push(entry);
+            }
+        }
+        return dates.sort();
     }
 }

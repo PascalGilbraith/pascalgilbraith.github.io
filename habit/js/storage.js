@@ -258,13 +258,14 @@ function validateHabitData(h) {
         }
     }
 
-    // Completions validation
+    // Completions validation (supports both individual dates and ranges)
     if (h.completions !== undefined && h.completions !== null) {
         if (!Array.isArray(h.completions)) {
             errors.push('Completions must be an array');
         } else {
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            const invalidDates = h.completions.filter(c => typeof c !== 'string' || !dateRegex.test(c));
+            const rangeRegex = /^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
+            const invalidDates = h.completions.filter(c => typeof c !== 'string' || (!dateRegex.test(c) && !rangeRegex.test(c)));
             if (invalidDates.length > 0) {
                 errors.push(`${invalidDates.length} invalid date(s) in completions`);
             }

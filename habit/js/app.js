@@ -14,6 +14,8 @@ let habits = [];
 let currentView = 'all'; // 'all' or 'today'
 let deferredPrompt = null; // Store install prompt event
 let notificationCheckInterval = null; // Interval for checking notifications
+let dropCompletedToBottom = false; // Whether to push completed/inactive habits down
+const SORT_PREF_KEY = 'habitTracker_dropCompleted';
 
 /**
  * Initialize the application
@@ -33,6 +35,9 @@ function init() {
         // Load habits from storage
         loadHabits();
         console.log('Loaded habits:', habits);
+
+        // Load sort preference
+        dropCompletedToBottom = localStorage.getItem(SORT_PREF_KEY) === 'true';
 
     // Set up event listeners
     setupEventListeners();
@@ -141,6 +146,9 @@ function setupEventListeners() {
         const observer = new MutationObserver(() => {
             if (!settingsModalForObserver.classList.contains('hidden')) {
                 updateNotificationStatus();
+                // Sync drop-completed toggle
+                const toggle = document.getElementById('drop-completed-toggle');
+                if (toggle) toggle.checked = dropCompletedToBottom;
             }
         });
         observer.observe(settingsModalForObserver, { attributes: true, attributeFilter: ['class'] });
@@ -237,6 +245,16 @@ function setupEventListeners() {
     if (themeToggle) {
         themeToggle.addEventListener('click', toggleTheme);
     }
+
+    // Drop completed/inactive toggle
+    const dropToggle = document.getElementById('drop-completed-toggle');
+    if (dropToggle) {
+        dropToggle.addEventListener('change', (e) => {
+            dropCompletedToBottom = e.target.checked;
+            localStorage.setItem(SORT_PREF_KEY, dropCompletedToBottom ? 'true' : 'false');
+            renderHabits();
+        });
+    }
 }
 
 /**
@@ -284,6 +302,10 @@ function handleAddHabitSubmit(e) {
         formData.notes,
         formData.tags
     );
+
+    // Assign order to the end of the list
+    const maxOrder = habits.reduce((max, h) => Math.max(max, typeof h.order === 'number' ? h.order : 0), -1);
+    habit.order = maxOrder + 1;
 
     // Add to habits array
     habits.push(habit);
@@ -341,9 +363,14 @@ function handleHabitComplete(habitId, shouldComplete) {
 
     // Save changes
     if (saveHabits()) {
-        // Update the UI
-        const callbacks = getCallbacks();
-        UI.updateHabitCard(habitId, habit, callbacks);
+        if (dropCompletedToBottom) {
+            // Full re-render so the list re-sorts
+            renderHabits();
+        } else {
+            // Just update the single card in place
+            const callbacks = getCallbacks();
+            UI.updateHabitCard(habitId, habit, callbacks);
+        }
     }
     } catch (error) {
         console.error('Error toggling habit completion:', error);
@@ -521,12 +548,91 @@ function getCallbacks() {
         onComplete: handleHabitComplete,
         onDelete: handleHabitDelete,
         onEdit: handleHabitEdit,
-        onHistoryToggle: handleHistoryToggle
+        onHistoryToggle: handleHistoryToggle,
+        onMoveUp: handleMoveUp,
+        onMoveDown: handleMoveDown
     };
 }
 
 /**
- * Render habits based on current view
+ * Move a habit up in the order
+ */
+function handleMoveUp(habitId) {
+    const sorted = getOrderedHabits();
+    const idx = sorted.findIndex(h => h.id === habitId);
+    if (idx <= 0) return;
+
+    // Swap order values
+    const temp = sorted[idx].order;
+    sorted[idx].order = sorted[idx - 1].order;
+    sorted[idx - 1].order = temp;
+
+    if (saveHabits()) {
+        renderHabits();
+    }
+}
+
+/**
+ * Move a habit down in the order
+ */
+function handleMoveDown(habitId) {
+    const sorted = getOrderedHabits();
+    const idx = sorted.findIndex(h => h.id === habitId);
+    if (idx < 0 || idx >= sorted.length - 1) return;
+
+    // Swap order values
+    const temp = sorted[idx].order;
+    sorted[idx].order = sorted[idx + 1].order;
+    sorted[idx + 1].order = temp;
+
+    if (saveHabits()) {
+        renderHabits();
+    }
+}
+
+/**
+ * Get habits sorted by their order property, optionally pushing
+ * completed-today or inactive habits to the bottom.
+ * @returns {Array<Habit>} Sorted copy referencing the same habit objects
+ */
+function getOrderedHabits() {
+    // Ensure all habits have order values (migration for old data)
+    habits.forEach((h, i) => {
+        if (typeof h.order !== 'number') h.order = i;
+    });
+
+    // Detect duplicate order values and re-assign sequentially
+    const orderSet = new Set(habits.map(h => h.order));
+    if (orderSet.size < habits.length) {
+        // Sort by current order (stable) then assign unique values
+        const temp = [...habits].sort((a, b) => a.order - b.order);
+        temp.forEach((h, i) => { h.order = i; });
+    }
+
+    const sorted = [...habits].sort((a, b) => a.order - b.order);
+
+    if (dropCompletedToBottom) {
+        const now = new Date();
+        const today = _localDateStr(now);
+        const top = [];
+        const bottom = [];
+        for (const h of sorted) {
+            const isActiveToday = h.isActiveOnDay(now);
+            const isCompletedToday = h.isCompletedOn(today);
+            if (!isActiveToday || isCompletedToday) {
+                bottom.push(h);
+            } else {
+                top.push(h);
+            }
+        }
+        return [...top, ...bottom];
+    }
+
+    return sorted;
+}
+
+/**
+ * Render habits based on current view, respecting order
  */
 function renderHabits() {
     const container = document.getElementById('habits-list');
@@ -536,11 +642,20 @@ function renderHabits() {
     }
 
     const callbacks = getCallbacks();
+    const ordered = getOrderedHabits();
 
     if (currentView === 'today') {
-        UI.renderTodayHabits(habits, container, callbacks);
+        const today = new Date();
+        const todayHabits = ordered.filter(h => h.isActiveOnDay(today));
+        UI.renderHabitList(todayHabits, container, callbacks);
     } else {
-        UI.renderHabitList(habits, container, callbacks);
+        UI.renderHabitList(ordered, container, callbacks);
+    }
+
+    // Update the drop-completed toggle state in the UI
+    const toggle = document.getElementById('drop-completed-toggle');
+    if (toggle) {
+        toggle.checked = dropCompletedToBottom;
     }
 }
 

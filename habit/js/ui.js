@@ -69,6 +69,8 @@ export function renderHabitCard(habit, callbacks = {}) {
                 ${habit.tags && habit.tags.length > 0 ? `<div class="habit-tags">${habit.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
             </div>
             <div class="habit-actions-header">
+                <button class="habit-move-up" data-habit-id="${safeId}" title="Move up" aria-label="Move ${escapeAttr(habit.name)} up">▲</button>
+                <button class="habit-move-down" data-habit-id="${safeId}" title="Move down" aria-label="Move ${escapeAttr(habit.name)} down">▼</button>
                 <button class="habit-edit" data-habit-id="${safeId}" title="Edit habit" aria-label="Edit ${escapeAttr(habit.name)}">✎</button>
                 <button class="habit-delete" data-habit-id="${safeId}" title="Delete habit" aria-label="Delete ${escapeAttr(habit.name)}">×</button>
             </div>
@@ -100,6 +102,8 @@ export function renderHabitCard(habit, callbacks = {}) {
     const editBtn = card.querySelector('.habit-edit');
     const completeBtn = card.querySelector('.complete-btn');
     const calendarToggle = card.querySelector('.calendar-toggle');
+    const moveUpBtn = card.querySelector('.habit-move-up');
+    const moveDownBtn = card.querySelector('.habit-move-down');
 
     if (deleteBtn && callbacks.onDelete) {
         deleteBtn.addEventListener('click', (e) => {
@@ -112,6 +116,20 @@ export function renderHabitCard(habit, callbacks = {}) {
         editBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             callbacks.onEdit(habit.id);
+        });
+    }
+
+    if (moveUpBtn && callbacks.onMoveUp) {
+        moveUpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            callbacks.onMoveUp(habit.id);
+        });
+    }
+
+    if (moveDownBtn && callbacks.onMoveDown) {
+        moveDownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            callbacks.onMoveDown(habit.id);
         });
     }
 

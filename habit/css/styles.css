@@ -325,6 +325,49 @@ main {
     gap: var(--spacing-xs);
 }
 
+.habit-move-up,
+.habit-move-down {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background var(--transition);
+    color: var(--text-secondary);
+}
+
+.habit-move-up:hover,
+.habit-move-down:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--text-primary);
+}
+
+.habits-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--spacing-sm);
+}
+
+.drop-completed-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.drop-completed-label input[type="checkbox"] {
+    cursor: pointer;
+}
+
 .habit-edit,
 .habit-delete {
     background: transparent;
