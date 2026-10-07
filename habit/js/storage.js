@@ -3,11 +3,47 @@
  * Handles all localStorage operations for the Habit Tracker app
  */
 
-import { Habit } from './habit.js';
+import { Habit, isValidDateString } from './habit.js';
+import { validateStackNames } from './stacks.js';
 
 const STORAGE_KEY = 'habitTracker_habits';
+const STACK_NAMES_KEY = 'habitTracker_stackNames';
 const STORAGE_VERSION_KEY = 'habitTracker_version';
 const CURRENT_VERSION = '1.0';
+
+/**
+ * Load custom stack names (time -> name) from localStorage
+ * @returns {Object<string, string>} Map of HH:MM time to custom name; empty if none or invalid
+ */
+export function loadStackNames() {
+    try {
+        const raw = localStorage.getItem(STACK_NAMES_KEY);
+        if (!raw) return {};
+        return validateStackNames(JSON.parse(raw)).names;
+    } catch (error) {
+        console.error('Error loading stack names:', error);
+        return {};
+    }
+}
+
+/**
+ * Save custom stack names to localStorage
+ * @param {Object<string, string>} names - Map of HH:MM time to custom name
+ * @returns {boolean|{success: false, error: 'quota'}} True on success
+ */
+export function saveStackNames(names) {
+    try {
+        const { names: clean } = validateStackNames(names);
+        localStorage.setItem(STACK_NAMES_KEY, JSON.stringify(clean));
+        return true;
+    } catch (error) {
+        if (error.name === 'QuotaExceededError' || error.code === 22) {
+            return { success: false, error: 'quota' };
+        }
+        console.error('Error saving stack names:', error);
+        return false;
+    }
+}
 
 /**
  * Save habits to localStorage
@@ -149,6 +185,7 @@ export function getHabitById(habitId) {
 export function clearAllData() {
     try {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STACK_NAMES_KEY);
         localStorage.removeItem(STORAGE_VERSION_KEY);
         return true;
     } catch (error) {
@@ -223,7 +260,8 @@ export function exportData() {
         const data = {
             version: CURRENT_VERSION,
             exportDate: new Date().toISOString(),
-            habits: habits.map(h => h.toJSON())
+            habits: habits.map(h => h.toJSON()),
+            stackNames: loadStackNames()
         };
         return JSON.stringify(data, null, 2);
     } catch (error) {
@@ -299,6 +337,17 @@ function validateHabitData(h) {
         }
     }
 
+    // Long-term repeat rule validation
+    if (h.recurrence !== undefined && h.recurrence !== null) {
+        const recurrenceError = Habit.validateRecurrence(h.recurrence);
+        if (recurrenceError) {
+            errors.push(`Invalid recurrence: ${recurrenceError}`);
+        }
+    }
+    if (h.dismissedOn !== undefined && h.dismissedOn !== null && !isValidDateString(h.dismissedOn)) {
+        errors.push('Invalid dismissedOn (expected YYYY-MM-DD)');
+    }
+
     return { valid: errors.length === 0, errors };
 }
 
@@ -329,6 +378,12 @@ export function importData(jsonString, merge = false) {
             throw new Error(`Invalid habit data: ${details}`);
         }
 
+        // Validate custom stack names (optional field; absent in older exports)
+        const stackResult = validateStackNames(data.stackNames);
+        if (stackResult.errors.length > 0) {
+            throw new Error(`Invalid stack names: ${stackResult.errors.join('; ')}`);
+        }
+
         // Convert to Habit instances
         const importedHabits = data.habits.map(h => Habit.fromJSON(h));
         
@@ -349,10 +404,18 @@ export function importData(jsonString, merge = false) {
                 }
             }
             
-            return saveHabits(allHabits);
+            const saved = saveHabits(allHabits);
+            if (saved === true) {
+                saveStackNames({ ...loadStackNames(), ...stackResult.names });
+            }
+            return saved;
         } else {
             // Replace all data
-            return saveHabits(importedHabits);
+            const saved = saveHabits(importedHabits);
+            if (saved === true) {
+                saveStackNames(stackResult.names);
+            }
+            return saved;
         }
     } catch (error) {
         console.error('Error importing data:', error);

@@ -2,6 +2,33 @@
  * Habit Class
  * Represents a single habit with tracking and scheduling capabilities
  */
+
+/** Approximate length in days of each repeat unit (used for urgency and limits) */
+const RECURRENCE_UNIT_DAYS = { days: 1, weeks: 7, months: 30 };
+const MAX_RECURRENCE_DAYS = 3650;
+
+/**
+ * Check a YYYY-MM-DD string is a real calendar date
+ * @param {*} value - Value to check
+ * @returns {boolean} True if valid
+ */
+export function isValidDateString(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [y, m, d] = value.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
+/**
+ * Convert YYYY-MM-DD to a whole day number (DST-safe, for date differences)
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {number} Days since the Unix epoch
+ */
+function dayNumber(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return Math.round(Date.UTC(y, m - 1, d) / 86400000);
+}
+
 export class Habit {
     /**
      * Create a new Habit
@@ -25,6 +52,168 @@ export class Habit {
         this.notes = notes || '';
         this.tags = tags || [];
         this.order = 0;
+        /** @type {{every: number, unit: string, firstDue: string}|null} Repeat rule for long-term habits */
+        this.recurrence = null;
+        /** @type {string|null} Date (YYYY-MM-DD) a due long-term habit was last dismissed ("snoozed") */
+        this.dismissedOn = null;
+    }
+
+    /**
+     * Whether this is a long-term habit (repeats every N days/weeks/months, not daily)
+     * @returns {boolean} True if a repeat rule is set
+     */
+    isLongTerm() {
+        return this.recurrence !== null && this.recurrence !== undefined;
+    }
+
+    /**
+     * Validate a repeat rule
+     * @param {*} rec - Candidate { every, unit, firstDue }
+     * @returns {string|null} Error message, or null if valid
+     * @static
+     */
+    static validateRecurrence(rec) {
+        if (!rec || typeof rec !== 'object' || Array.isArray(rec)) {
+            return 'Repeat rule must be an object';
+        }
+        if (!Object.prototype.hasOwnProperty.call(RECURRENCE_UNIT_DAYS, rec.unit)) {
+            return 'Repeat unit must be days, weeks or months';
+        }
+        if (!Number.isInteger(rec.every) || rec.every < 1) {
+            return 'Repeat interval must be a whole number of at least 1';
+        }
+        if (rec.every * RECURRENCE_UNIT_DAYS[rec.unit] > MAX_RECURRENCE_DAYS) {
+            return 'Repeat interval is too long (max about 10 years)';
+        }
+        if (rec.firstDue !== undefined && rec.firstDue !== null && !isValidDateString(rec.firstDue)) {
+            return 'First due date must be a valid date (YYYY-MM-DD)';
+        }
+        return null;
+    }
+
+    /**
+     * Make this a long-term habit, or turn it back into a normal habit.
+     * Long-term habits don't use notification times or days of the week, so those are cleared.
+     * @param {{every: number, unit: string, firstDue?: string|null}|null} rec - Repeat rule, or null to clear
+     * @throws {Error} If the rule is invalid
+     */
+    setRecurrence(rec) {
+        if (rec === null || rec === undefined) {
+            this.recurrence = null;
+            this.dismissedOn = null;
+            return;
+        }
+        const error = Habit.validateRecurrence(rec);
+        if (error) {
+            throw new Error(error);
+        }
+        this.recurrence = {
+            every: rec.every,
+            unit: rec.unit,
+            firstDue: rec.firstDue || this._normalizeDate(new Date())
+        };
+        this.notificationTime = null;
+        this.daysOfWeek = null;
+    }
+
+    /**
+     * Add a repeat interval to a date. Month arithmetic clamps to the end of shorter
+     * months (31 Jan + 1 month = 28/29 Feb).
+     * @param {string} dateStr - YYYY-MM-DD
+     * @param {number} every - Number of units
+     * @param {string} unit - 'days', 'weeks' or 'months'
+     * @returns {string} YYYY-MM-DD
+     * @static
+     */
+    static addInterval(dateStr, every, unit) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        let result;
+        if (unit === 'months') {
+            const lastDayOfTarget = new Date(y, m - 1 + every + 1, 0).getDate();
+            result = new Date(y, m - 1 + every, Math.min(d, lastDayOfTarget));
+        } else {
+            result = new Date(y, m - 1, d + every * (unit === 'weeks' ? 7 : 1));
+        }
+        return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, '0')}-${String(result.getDate()).padStart(2, '0')}`;
+    }
+
+    /**
+     * Get the most recent completion date
+     * @returns {string|null} YYYY-MM-DD, or null if never completed
+     */
+    getLastCompletedDate() {
+        if (this.completions.length === 0) return null;
+        return this.completions.reduce((max, c) => (c > max ? c : max));
+    }
+
+    /**
+     * Get the date a long-term habit is next due: the last completion plus the repeat
+     * interval, or the first due date if it has never been completed.
+     * @returns {string|null} YYYY-MM-DD, or null if not a long-term habit
+     */
+    getNextDueDate() {
+        if (!this.isLongTerm()) return null;
+        const last = this.getLastCompletedDate();
+        if (last) {
+            return Habit.addInterval(last, this.recurrence.every, this.recurrence.unit);
+        }
+        return this.recurrence.firstDue || this.createdDate;
+    }
+
+    /**
+     * Days from `today` until the habit is due (negative when overdue)
+     * @param {string|Date} today - Reference date (defaults to now)
+     * @returns {number|null} Whole days, or null if not a long-term habit
+     */
+    getDaysUntilDue(today = new Date()) {
+        const due = this.getNextDueDate();
+        if (due === null) return null;
+        return dayNumber(due) - dayNumber(this._normalizeDate(today));
+    }
+
+    /**
+     * Whether a long-term habit is due today or overdue
+     * @param {string|Date} today - Reference date (defaults to now)
+     * @returns {boolean} True if due
+     */
+    isDue(today = new Date()) {
+        const days = this.getDaysUntilDue(today);
+        return days !== null && days <= 0;
+    }
+
+    /**
+     * How urgent a long-term habit is, growing the longer it is left:
+     * 0 = not due, 1 = due today, 2 = overdue, 3 = badly overdue
+     * (overdue by a quarter of its interval, and at least 2 days).
+     * @param {string|Date} today - Reference date (defaults to now)
+     * @returns {0|1|2|3} Urgency level
+     */
+    getUrgencyLevel(today = new Date()) {
+        const days = this.getDaysUntilDue(today);
+        if (days === null || days > 0) return 0;
+        if (days === 0) return 1;
+        const intervalDays = this.recurrence.every * RECURRENCE_UNIT_DAYS[this.recurrence.unit];
+        const severeAfter = Math.max(2, Math.ceil(intervalDays * 0.25));
+        return -days >= severeAfter ? 3 : 2;
+    }
+
+    /**
+     * Dismiss ("snooze") a due long-term habit for a day. It comes back the next day,
+     * still overdue, so urgency keeps growing.
+     * @param {string|Date} date - Day to dismiss for (defaults to today)
+     */
+    dismiss(date = new Date()) {
+        if (!this.isLongTerm()) return;
+        this.dismissedOn = this._normalizeDate(date);
+    }
+
+    /**
+     * Whether the habit was dismissed on a given day
+     * @param {string|Date} date - Day to check (defaults to today)
+     * @returns {boolean} True if dismissed that day
+     */
+    isDismissedOn(date = new Date()) {
+        return this.dismissedOn !== null && this.dismissedOn === this._normalizeDate(date);
     }
 
     /**
@@ -344,7 +533,9 @@ export class Habit {
             daysOfWeek: this.daysOfWeek,
             notes: this.notes,
             tags: this.tags,
-            order: this.order
+            order: this.order,
+            recurrence: this.recurrence,
+            dismissedOn: this.dismissedOn
         };
     }
 
@@ -368,6 +559,10 @@ export class Habit {
         );
         habit.id = obj.id;
         habit.order = (typeof obj.order === 'number') ? obj.order : 0;
+        if (obj.recurrence && !Habit.validateRecurrence(obj.recurrence)) {
+            habit.setRecurrence(obj.recurrence);
+            habit.dismissedOn = isValidDateString(obj.dismissedOn) ? obj.dismissedOn : null;
+        }
         return habit;
     }
 

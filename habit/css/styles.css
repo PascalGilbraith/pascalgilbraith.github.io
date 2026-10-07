@@ -348,6 +348,87 @@ main {
     color: var(--text-primary);
 }
 
+.habit-move-up:disabled,
+.habit-move-down:disabled {
+    opacity: 0.25;
+    cursor: default;
+    background: transparent;
+}
+
+/* Habit stacks (habits sharing a notification time) */
+.habit-stack {
+    border-left: 4px solid var(--primary-color);
+    border-radius: var(--border-radius);
+    background: var(--primary-light);
+    padding: var(--spacing-xs);
+    display: grid;
+    gap: var(--spacing-xs);
+}
+
+[data-theme="dark"] .habit-stack {
+    background: rgba(102, 187, 106, 0.12);
+}
+
+.stack-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: 0.25rem 0.5rem;
+}
+
+.stack-title-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.stack-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.stack-time {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.stack-progress {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.stack-progress.all-done {
+    color: var(--primary-dark);
+}
+
+.stack-rename {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    color: var(--text-secondary);
+}
+
+.stack-rename:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--text-primary);
+}
+
+.stack-habits {
+    display: grid;
+    gap: var(--spacing-xs);
+}
+
 .habits-toolbar {
     display: flex;
     justify-content: flex-end;
@@ -475,14 +556,29 @@ main {
 
 .calendar-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
-    gap: 0.5rem;
+    /* 7 fixed columns, one per weekday, so weekday patterns line up vertically */
+    grid-template-columns: repeat(7, minmax(0, 2.5rem));
+    justify-content: center;
+    gap: 0.35rem;
     padding: var(--spacing-md) 0;
     transition: all var(--transition);
 }
 
 .calendar-grid.hidden {
     display: none;
+}
+
+.calendar-weekday {
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.calendar-day.future {
+    background: transparent;
+    border-style: dashed;
+    opacity: 0.2;
 }
 
 .calendar-day {
@@ -593,7 +689,10 @@ main {
 }
 
 .form-group input[type="text"],
-.form-group input[type="time"] {
+.form-group input[type="time"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group select {
     width: 100%;
     padding: var(--spacing-sm);
     border: 1px solid var(--border);
@@ -951,6 +1050,140 @@ textarea:focus-visible {
     border-radius: var(--border-radius);
 }
 
+
+/* Long-term habits */
+.checkbox-label {
+    display: flex !important;
+    align-items: center;
+    gap: var(--spacing-xs);
+    cursor: pointer;
+}
+
+.recurrence-row {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
+}
+
+.recurrence-row input[type="number"] {
+    width: 6rem;
+}
+
+.form-group select,
+.form-group input[type="number"],
+.form-group input[type="date"] {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.due-now-section,
+.long-term-section {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.due-now-list,
+.long-term-list {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.section-title,
+.long-term-section > summary {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.long-term-section > summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: var(--spacing-xs) 0;
+}
+
+.long-term-section[open] > summary {
+    margin-bottom: var(--spacing-sm);
+}
+
+.section-count {
+    display: inline-block;
+    min-width: 1.5rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.habit-card.long-term {
+    border-left: 5px solid var(--border);
+}
+
+.due-badge {
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--border);
+    color: var(--text-primary);
+}
+
+/* Urgency grows as the habit stays overdue: amber, orange, red */
+.habit-card.urgency-1 { border-left-color: #FFB300; background: #FFFBEB; }
+.habit-card.urgency-2 { border-left-color: #F57C00; background: #FFF3E0; }
+.habit-card.urgency-3 { border-left-color: #D32F2F; background: #FFEBEE; }
+.due-badge.due-level-1 { background: #FFB300; color: #3E2723; }
+.due-badge.due-level-2 { background: #F57C00; color: #fff; }
+.due-badge.due-level-3 { background: #D32F2F; color: #fff; }
+
+[data-theme="dark"] .habit-card.urgency-1 { background: #3A3000; }
+[data-theme="dark"] .habit-card.urgency-2 { background: #3E2400; }
+[data-theme="dark"] .habit-card.urgency-3 { background: #3F1515; }
+
+.habit-card.urgency-3 .due-badge {
+    animation: urgency-pulse 2s ease-in-out infinite;
+}
+
+@keyframes urgency-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.5); }
+    50% { box-shadow: 0 0 0 6px rgba(211, 47, 47, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .habit-card.urgency-3 .due-badge {
+        animation: none;
+    }
+}
+
+.habit-card.snoozed {
+    opacity: 0.75;
+}
+
+.dismiss-btn {
+    padding: var(--spacing-sm);
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.dismiss-btn:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.snoozed-note {
+    align-self: center;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.habit-card.long-term .complete-btn:not(.completed) {
+    background: var(--surface);
+}
 
 /* Utility Classes */
 .hidden {

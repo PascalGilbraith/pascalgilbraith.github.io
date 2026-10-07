@@ -8,9 +8,11 @@ import * as Storage from './storage.js';
 import * as UI from './ui.js';
 import * as Notifications from './notifications.js';
 import { _localDateStr } from './ui.js';
+import { groupHabitsIntoStacks, getReorderPeers, sanitizeStackName } from './stacks.js';
 
 // Application state
 let habits = [];
+let stackNames = {}; // Custom stack names keyed by HH:MM notification time
 let currentView = 'all'; // 'all' or 'today'
 let deferredPrompt = null; // Store install prompt event
 let notificationCheckInterval = null; // Interval for checking notifications
@@ -69,6 +71,7 @@ function init() {
  */
 function loadHabits() {
     habits = Storage.loadHabits();
+    stackNames = Storage.loadStackNames();
     console.log(`Loaded ${habits.length} habits from storage`);
 }
 
@@ -171,6 +174,12 @@ function setupEventListeners() {
     if (editHabitForm) {
         editHabitForm.addEventListener('submit', handleEditHabitSubmit);
     }
+
+    // Show/hide the long-term repeat fields in both forms
+    [addHabitForm, editHabitForm].forEach(f => {
+        const box = f && f.querySelector('input[type="checkbox"][id$="habit-longterm"]');
+        if (box) box.addEventListener('change', () => UI.updateLongTermFormVisibility(f));
+    });
 
     // Edit Cancel button
     const editCancelBtn = document.getElementById('edit-cancel-btn');
@@ -292,6 +301,15 @@ function handleAddHabitSubmit(e) {
             return;
         }
 
+        // Validate the long-term repeat rule if provided
+        if (formData.longTerm) {
+            const recurrenceError = Habit.validateRecurrence(formData.longTerm);
+            if (recurrenceError) {
+                UI.showNotification(recurrenceError, 'error');
+                return;
+            }
+        }
+
     // Create new habit
     const habit = new Habit(
         formData.name,
@@ -302,6 +320,9 @@ function handleAddHabitSubmit(e) {
         formData.notes,
         formData.tags
     );
+    if (formData.longTerm) {
+        habit.setRecurrence(formData.longTerm);
+    }
 
     // Assign order to the end of the list
     const maxOrder = habits.reduce((max, h) => Math.max(max, typeof h.order === 'number' ? h.order : 0), -1);
@@ -321,6 +342,7 @@ function handleAddHabitSubmit(e) {
     // Close modal and reset form
     UI.hideModal('add-habit-modal');
     form.reset();
+    UI.updateLongTermFormVisibility(form);
     } catch (error) {
         console.error('Error adding habit:', error);
         UI.showNotification('Failed to add habit. Please try again.', 'error');
@@ -355,7 +377,9 @@ function handleHabitComplete(habitId, shouldComplete) {
 
     if (shouldComplete) {
         habit.markCompleted(today);
-        UI.showNotification(`Great job! "${habit.name}" completed!`, 'success');
+        habit.dismissedOn = null;
+        const nextDue = habit.isLongTerm() ? ` Next due ${habit.getNextDueDate()}.` : '';
+        UI.showNotification(`Great job! "${habit.name}" completed!${nextDue}`, 'success');
     } else {
         habit.markIncomplete(today);
         UI.showNotification(`"${habit.name}" marked as incomplete`, 'info');
@@ -363,14 +387,8 @@ function handleHabitComplete(habitId, shouldComplete) {
 
     // Save changes
     if (saveHabits()) {
-        if (dropCompletedToBottom) {
-            // Full re-render so the list re-sorts
-            renderHabits();
-        } else {
-            // Just update the single card in place
-            const callbacks = getCallbacks();
-            UI.updateHabitCard(habitId, habit, callbacks);
-        }
+        // Full re-render so the list re-sorts and stack progress updates
+        renderHabits();
     }
     } catch (error) {
         console.error('Error toggling habit completion:', error);
@@ -406,8 +424,8 @@ function handleHabitDelete(habitId) {
         // Save changes
         if (saveHabits()) {
             UI.showNotification(`"${habit.name}" deleted`, 'info');
-            // Remove from UI
-            UI.removeHabitCard(habitId);
+            // Re-render so any stack the habit belonged to updates
+            renderHabits();
         } else {
             throw new Error('Failed to save after deletion');
         }
@@ -467,10 +485,28 @@ function handleEditHabitSubmit(e) {
             return;
         }
 
+        // Validate the long-term repeat rule if provided
+        if (formData.longTerm) {
+            // firstDue is locked (null) once the habit has completions; keep the existing one
+            if (!formData.longTerm.firstDue && habit.recurrence) {
+                formData.longTerm.firstDue = habit.recurrence.firstDue;
+            }
+            const recurrenceError = Habit.validateRecurrence(formData.longTerm);
+            if (recurrenceError) {
+                UI.showNotification(recurrenceError, 'error');
+                return;
+            }
+        }
+
         // Update habit properties
         habit.name = formData.name;
-        habit.setNotificationTime(formData.notificationTime);
-        habit.setDaysOfWeek(formData.daysOfWeek);
+        if (formData.longTerm) {
+            habit.setRecurrence(formData.longTerm);
+        } else {
+            habit.setRecurrence(null);
+            habit.setNotificationTime(formData.notificationTime);
+            habit.setDaysOfWeek(formData.daysOfWeek);
+        }
         habit.notes = formData.notes || '';
         habit.tags = formData.tags || [];
 
@@ -481,9 +517,8 @@ function handleEditHabitSubmit(e) {
             throw new Error('Failed to save changes');
         }
 
-        // Update the UI
-        const callbacks = getCallbacks();
-        UI.updateHabitCard(habitId, habit, callbacks);
+        // Update the UI (notification time may have changed which stack this habit is in)
+        renderHabits();
 
         // Close modal
         UI.hideModal('edit-habit-modal');
@@ -531,12 +566,25 @@ function handleHistoryToggle(habitId, dateStr) {
         }
 
         if (saveHabits()) {
-            const callbacks = getCallbacks();
-            UI.updateHabitCard(habitId, habit, callbacks);
+            renderHabits();
         }
     } catch (error) {
         console.error('Error toggling history completion:', error);
         UI.showNotification('Failed to update history. Please try again.', 'error');
+    }
+}
+
+/**
+ * Dismiss a due long-term habit for today. It reappears tomorrow, still overdue.
+ */
+function handleHabitDismiss(habitId) {
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit || !habit.isLongTerm()) return;
+
+    habit.dismiss(new Date());
+    if (saveHabits()) {
+        renderHabits();
+        UI.showNotification(`"${habit.name}" snoozed until tomorrow`, 'info');
     }
 }
 
@@ -546,48 +594,78 @@ function handleHistoryToggle(habitId, dateStr) {
 function getCallbacks() {
     return {
         onComplete: handleHabitComplete,
+        onDismiss: handleHabitDismiss,
         onDelete: handleHabitDelete,
         onEdit: handleHabitEdit,
         onHistoryToggle: handleHistoryToggle,
         onMoveUp: handleMoveUp,
-        onMoveDown: handleMoveDown
+        onMoveDown: handleMoveDown,
+        onRenameStack: handleRenameStack
     };
+}
+
+/**
+ * Rename a stack. An empty name restores the default (the time).
+ */
+function handleRenameStack(time, currentName) {
+    const input = prompt(`Name for the ${time} stack (leave empty to use the time):`, currentName === time ? '' : currentName);
+    if (input === null) return; // cancelled
+
+    const name = sanitizeStackName(input);
+    const updated = { ...stackNames };
+    if (name) {
+        updated[time] = name;
+    } else {
+        delete updated[time];
+    }
+
+    const result = Storage.saveStackNames(updated);
+    if (result === true) {
+        stackNames = updated;
+        renderHabits();
+        UI.showNotification(name ? `Stack renamed to "${name}"` : 'Stack name reset', 'success');
+    } else if (result && result.error === 'quota') {
+        UI.showNotification('Storage is full! Try deleting old habits or exporting data.', 'error');
+    } else {
+        UI.showNotification('Failed to save stack name', 'error');
+    }
+}
+
+/**
+ * Swap a habit with its neighbour among habits it can be reordered with
+ * (the same stack, or the untimed habits)
+ */
+function moveHabit(habitId, direction) {
+    const ordered = getOrderedHabits();
+    const habit = ordered.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const peers = getReorderPeers(ordered, habit);
+    const idx = peers.findIndex(h => h.id === habitId);
+    const other = idx >= 0 ? peers[idx + direction] : null;
+    if (!other) return;
+
+    const temp = habit.order;
+    habit.order = other.order;
+    other.order = temp;
+
+    if (saveHabits()) {
+        renderHabits();
+    }
 }
 
 /**
  * Move a habit up in the order
  */
 function handleMoveUp(habitId) {
-    const sorted = getOrderedHabits();
-    const idx = sorted.findIndex(h => h.id === habitId);
-    if (idx <= 0) return;
-
-    // Swap order values
-    const temp = sorted[idx].order;
-    sorted[idx].order = sorted[idx - 1].order;
-    sorted[idx - 1].order = temp;
-
-    if (saveHabits()) {
-        renderHabits();
-    }
+    moveHabit(habitId, -1);
 }
 
 /**
  * Move a habit down in the order
  */
 function handleMoveDown(habitId) {
-    const sorted = getOrderedHabits();
-    const idx = sorted.findIndex(h => h.id === habitId);
-    if (idx < 0 || idx >= sorted.length - 1) return;
-
-    // Swap order values
-    const temp = sorted[idx].order;
-    sorted[idx].order = sorted[idx + 1].order;
-    sorted[idx + 1].order = temp;
-
-    if (saveHabits()) {
-        renderHabits();
-    }
+    moveHabit(habitId, 1);
 }
 
 /**
@@ -644,13 +722,15 @@ function renderHabits() {
     const callbacks = getCallbacks();
     const ordered = getOrderedHabits();
 
-    if (currentView === 'today') {
-        const today = new Date();
-        const todayHabits = ordered.filter(h => h.isActiveOnDay(today));
-        UI.renderHabitList(todayHabits, container, callbacks);
-    } else {
-        UI.renderHabitList(ordered, container, callbacks);
-    }
+    const visible = currentView === 'today'
+        ? ordered.filter(h => h.isActiveOnDay(new Date()))
+        : ordered;
+    UI.renderStackedHabitList(
+        groupHabitsIntoStacks(visible, stackNames),
+        container,
+        callbacks,
+        visible.filter(h => h.isLongTerm())
+    );
 
     // Update the drop-completed toggle state in the UI
     const toggle = document.getElementById('drop-completed-toggle');
@@ -1062,6 +1142,7 @@ function clearAllData() {
 
     if (Storage.clearAllData()) {
         habits = [];
+        stackNames = {};
         renderHabits();
         UI.showNotification('All data cleared', 'info');
     } else {
