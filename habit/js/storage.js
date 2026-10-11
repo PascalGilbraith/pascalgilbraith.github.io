@@ -4,12 +4,53 @@
  */
 
 import { Habit, isValidDateString } from './habit.js';
-import { validateStackNames } from './stacks.js';
+import { validateStackNames, isValidStackTime } from './stacks.js';
 
 const STORAGE_KEY = 'habitTracker_habits';
 const STACK_NAMES_KEY = 'habitTracker_stackNames';
+const STACK_COLLAPSE_KEY = 'habitTracker_stackCollapse';
 const STORAGE_VERSION_KEY = 'habitTracker_version';
 const CURRENT_VERSION = '1.0';
+
+/**
+ * Load today's manual stack collapse choices. They are only meaningful for the day they
+ * were made (a new day starts with every stack open until it is completed).
+ * @param {string} today - Local date (YYYY-MM-DD)
+ * @returns {Object<string, boolean>} Map of HH:MM time to collapsed (true) / expanded (false)
+ */
+export function loadStackCollapse(today) {
+    try {
+        const raw = localStorage.getItem(STACK_COLLAPSE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.date !== today || !parsed.states || typeof parsed.states !== 'object') return {};
+        const result = {};
+        for (const [time, value] of Object.entries(parsed.states)) {
+            if (isValidStackTime(time) && typeof value === 'boolean') result[time] = value;
+        }
+        return result;
+    } catch (error) {
+        console.error('Error loading stack collapse state:', error);
+        return {};
+    }
+}
+
+/**
+ * Save today's manual stack collapse choices. Purely a UI preference, so failures
+ * (including a full quota) are logged and ignored.
+ * @param {string} today - Local date (YYYY-MM-DD)
+ * @param {Object<string, boolean>} states - Map of HH:MM time to collapsed state
+ * @returns {boolean} True if saved
+ */
+export function saveStackCollapse(today, states) {
+    try {
+        localStorage.setItem(STACK_COLLAPSE_KEY, JSON.stringify({ date: today, states }));
+        return true;
+    } catch (error) {
+        console.error('Error saving stack collapse state:', error);
+        return false;
+    }
+}
 
 /**
  * Load custom stack names (time -> name) from localStorage
@@ -186,6 +227,7 @@ export function clearAllData() {
     try {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STACK_NAMES_KEY);
+        localStorage.removeItem(STACK_COLLAPSE_KEY);
         localStorage.removeItem(STORAGE_VERSION_KEY);
         return true;
     } catch (error) {

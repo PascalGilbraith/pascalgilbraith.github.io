@@ -54,8 +54,9 @@ export function renderHabitList(habits, container, callbacks = {}) {
  * @param {HTMLElement} container - Container element to render into
  * @param {Object} callbacks - Card callbacks plus optional onRenameStack(time, currentName)
  * @param {Array<Habit>} [longTermHabits=[]] - Long-term habits, shown in "Due now" and "Long-term" sections
+ * @param {Object<string, boolean>} [stackCollapse={}] - Manual collapsed (true) / expanded (false) choice per stack time; stacks without one collapse when complete
  */
-export function renderStackedHabitList(items, container, callbacks = {}, longTermHabits = []) {
+export function renderStackedHabitList(items, container, callbacks = {}, longTermHabits = [], stackCollapse = {}) {
     if (!container) {
         console.error('Container element not provided');
         return;
@@ -103,7 +104,7 @@ export function renderStackedHabitList(items, container, callbacks = {}, longTer
 
     for (const item of items) {
         if (item.type === 'stack') {
-            fragment.appendChild(renderStack(item, callbacks));
+            fragment.appendChild(renderStack(item, callbacks, stackCollapse[item.time]));
         } else {
             const peers = item.habit.notificationTime ? [item.habit] : untimed;
             fragment.appendChild(renderHabitCard(item.habit, callbacks, _moveOptions(item.habit, peers)));
@@ -138,12 +139,14 @@ function _moveOptions(habit, section) {
 }
 
 /**
- * Render a stack: a header (name, time, progress, rename) above its habit cards
+ * Render a stack: a header (toggle, name, time, progress, rename) above its habit cards.
+ * The stack is collapsed when the caller says so, or by default once every habit due today is done.
  * @param {{time: string, name: string, habits: Array<Habit>}} stack - Stack item
- * @param {Object} callbacks - Card callbacks plus optional onRenameStack
+ * @param {Object} callbacks - Card callbacks plus optional onRenameStack and onToggleStack(time, collapsed)
+ * @param {boolean} [collapsedOverride] - Manual choice; undefined means collapse only when complete
  * @returns {HTMLElement} Stack element
  */
-export function renderStack(stack, callbacks = {}) {
+export function renderStack(stack, callbacks = {}, collapsedOverride = undefined) {
     const el = document.createElement('section');
     el.className = 'habit-stack';
     el.dataset.stackTime = stack.time;
@@ -154,20 +157,41 @@ export function renderStack(stack, callbacks = {}) {
     const doneToday = dueToday.filter(h => h.isCompletedOn(today)).length;
     const allDone = dueToday.length > 0 && doneToday === dueToday.length;
     const headingId = `stack-title-${stack.time.replace(':', '')}`;
+    const bodyId = `stack-body-${stack.time.replace(':', '')}`;
     const hasCustomName = stack.name !== stack.time;
+    const collapsed = typeof collapsedOverride === 'boolean' ? collapsedOverride : allDone;
 
     el.innerHTML = `
         <div class="stack-header">
+            <button class="stack-toggle" type="button" aria-expanded="${!collapsed}" aria-controls="${escapeAttr(bodyId)}"><span class="toggle-icon" aria-hidden="true">▼</span></button>
             <div class="stack-title-group">
                 <h2 class="stack-name" id="${escapeAttr(headingId)}">${escapeHtml(stack.name)}</h2>
                 ${hasCustomName ? `<span class="stack-time" title="Stack time">🔔 ${escapeHtml(stack.time)}</span>` : ''}
             </div>
-            <span class="stack-progress ${allDone ? 'all-done' : ''}" title="Completed today">${dueToday.length > 0 ? `${doneToday}/${dueToday.length} done` : 'Rest day'}</span>
+            <span class="stack-progress ${allDone ? 'all-done' : ''}" title="Completed today">${dueToday.length > 0 ? `${allDone ? '✓ ' : ''}${doneToday}/${dueToday.length} done` : 'Rest day'}</span>
             <button class="stack-rename" type="button" data-stack-time="${escapeAttr(stack.time)}" title="Rename stack" aria-label="Rename stack ${escapeAttr(stack.name)}">✎</button>
         </div>
-        <div class="stack-habits"></div>
+        <div class="stack-habits" id="${escapeAttr(bodyId)}"></div>
     `;
     el.setAttribute('aria-labelledby', headingId);
+
+    const toggleBtn = el.querySelector('.stack-toggle');
+    const body = el.querySelector('.stack-habits');
+    const applyCollapsed = (isCollapsed) => {
+        el.classList.toggle('collapsed', isCollapsed);
+        body.classList.toggle('hidden', isCollapsed);
+        toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+        const label = `${isCollapsed ? 'Expand' : 'Collapse'} stack ${stack.name}`;
+        toggleBtn.setAttribute('aria-label', label);
+        toggleBtn.title = `${isCollapsed ? 'Expand' : 'Collapse'} stack`;
+    };
+    applyCollapsed(collapsed);
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = !el.classList.contains('collapsed');
+        applyCollapsed(next);
+        if (callbacks.onToggleStack) callbacks.onToggleStack(stack.time, next);
+    });
 
     const renameBtn = el.querySelector('.stack-rename');
     if (renameBtn && callbacks.onRenameStack) {
@@ -177,7 +201,6 @@ export function renderStack(stack, callbacks = {}) {
         });
     }
 
-    const body = el.querySelector('.stack-habits');
     stack.habits.forEach(habit => {
         body.appendChild(renderHabitCard(habit, callbacks, _moveOptions(habit, stack.habits)));
     });

@@ -2,7 +2,7 @@
 // Provides offline functionality and caching
 
 // CACHE_VERSION should be bumped on each deploy to bust stale caches
-const CACHE_VERSION = '5';
+const CACHE_VERSION = '6';
 const CACHE_NAME = `habit-tracker-v${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
     './',

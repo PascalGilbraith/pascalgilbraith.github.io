@@ -13,6 +13,8 @@ import { groupHabitsIntoStacks, getReorderPeers, sanitizeStackName } from './sta
 // Application state
 let habits = [];
 let stackNames = {}; // Custom stack names keyed by HH:MM notification time
+let stackCollapse = {}; // Today's manual collapse choices keyed by HH:MM (true = collapsed)
+let stackCollapseDate = ''; // Local date stackCollapse belongs to
 let currentView = 'all'; // 'all' or 'today'
 let deferredPrompt = null; // Store install prompt event
 let notificationCheckInterval = null; // Interval for checking notifications
@@ -72,6 +74,8 @@ function init() {
 function loadHabits() {
     habits = Storage.loadHabits();
     stackNames = Storage.loadStackNames();
+    stackCollapseDate = _localDateStr(new Date());
+    stackCollapse = Storage.loadStackCollapse(stackCollapseDate);
     console.log(`Loaded ${habits.length} habits from storage`);
 }
 
@@ -385,6 +389,12 @@ function handleHabitComplete(habitId, shouldComplete) {
         UI.showNotification(`"${habit.name}" marked as incomplete`, 'info');
     }
 
+    // A completion change hands the stack back to automatic collapsing (collapse once complete)
+    if (habit.notificationTime && habit.notificationTime in stackCollapse) {
+        delete stackCollapse[habit.notificationTime];
+        Storage.saveStackCollapse(today, stackCollapse);
+    }
+
     // Save changes
     if (saveHabits()) {
         // Full re-render so the list re-sorts and stack progress updates
@@ -600,8 +610,17 @@ function getCallbacks() {
         onHistoryToggle: handleHistoryToggle,
         onMoveUp: handleMoveUp,
         onMoveDown: handleMoveDown,
-        onRenameStack: handleRenameStack
+        onRenameStack: handleRenameStack,
+        onToggleStack: handleToggleStack
     };
+}
+
+/**
+ * Remember a manual collapse/expand of a stack for the rest of today
+ */
+function handleToggleStack(time, collapsed) {
+    stackCollapse[time] = collapsed;
+    Storage.saveStackCollapse(stackCollapseDate, stackCollapse);
 }
 
 /**
@@ -725,11 +744,19 @@ function renderHabits() {
     const visible = currentView === 'today'
         ? ordered.filter(h => h.isActiveOnDay(new Date()))
         : ordered;
+    // Manual collapse choices only last for the day they were made
+    const todayStr = _localDateStr(new Date());
+    if (stackCollapseDate !== todayStr) {
+        stackCollapseDate = todayStr;
+        stackCollapse = {};
+    }
+
     UI.renderStackedHabitList(
         groupHabitsIntoStacks(visible, stackNames),
         container,
         callbacks,
-        visible.filter(h => h.isLongTerm())
+        visible.filter(h => h.isLongTerm()),
+        stackCollapse
     );
 
     // Update the drop-completed toggle state in the UI
@@ -1143,6 +1170,7 @@ function clearAllData() {
     if (Storage.clearAllData()) {
         habits = [];
         stackNames = {};
+        stackCollapse = {};
         renderHabits();
         UI.showNotification('All data cleared', 'info');
     } else {
