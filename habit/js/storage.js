@@ -9,6 +9,7 @@ import { validateStackNames, isValidStackTime } from './stacks.js';
 const STORAGE_KEY = 'habitTracker_habits';
 const STACK_NAMES_KEY = 'habitTracker_stackNames';
 const STACK_COLLAPSE_KEY = 'habitTracker_stackCollapse';
+const CARD_COLLAPSE_KEY = 'habitTracker_cardCollapse';
 const STORAGE_VERSION_KEY = 'habitTracker_version';
 const CURRENT_VERSION = '1.0';
 
@@ -82,6 +83,45 @@ export function saveStackNames(names) {
             return { success: false, error: 'quota' };
         }
         console.error('Error saving stack names:', error);
+        return false;
+    }
+}
+
+/**
+ * Load today's manual collapse choices for standalone habits (day-scoped like stack choices)
+ * @param {string} today - Local date (YYYY-MM-DD)
+ * @returns {Object<string, boolean>} Map of habit ID to collapsed (true) / expanded (false)
+ */
+export function loadCardCollapse(today) {
+    try {
+        const raw = localStorage.getItem(CARD_COLLAPSE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.date !== today || !parsed.states || typeof parsed.states !== 'object') return {};
+        const result = {};
+        for (const [id, value] of Object.entries(parsed.states)) {
+            if (id.length <= 100 && !/[<>"'&]/.test(id) && typeof value === 'boolean') result[id] = value;
+        }
+        return result;
+    } catch (error) {
+        console.error('Error loading habit collapse state:', error);
+        return {};
+    }
+}
+
+/**
+ * Save today's manual collapse choices for standalone habits. A UI preference only,
+ * so failures (including a full quota) are logged and ignored.
+ * @param {string} today - Local date (YYYY-MM-DD)
+ * @param {Object<string, boolean>} states - Map of habit ID to collapsed state
+ * @returns {boolean} True if saved
+ */
+export function saveCardCollapse(today, states) {
+    try {
+        localStorage.setItem(CARD_COLLAPSE_KEY, JSON.stringify({ date: today, states }));
+        return true;
+    } catch (error) {
+        console.error('Error saving habit collapse state:', error);
         return false;
     }
 }
@@ -228,6 +268,7 @@ export function clearAllData() {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STACK_NAMES_KEY);
         localStorage.removeItem(STACK_COLLAPSE_KEY);
+        localStorage.removeItem(CARD_COLLAPSE_KEY);
         localStorage.removeItem(STORAGE_VERSION_KEY);
         return true;
     } catch (error) {

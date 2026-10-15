@@ -14,7 +14,8 @@ import { groupHabitsIntoStacks, getReorderPeers, sanitizeStackName } from './sta
 let habits = [];
 let stackNames = {}; // Custom stack names keyed by HH:MM notification time
 let stackCollapse = {}; // Today's manual collapse choices keyed by HH:MM (true = collapsed)
-let stackCollapseDate = ''; // Local date stackCollapse belongs to
+let stackCollapseDate = ''; // Local date stackCollapse and cardCollapse belong to
+let cardCollapse = {}; // Today's manual collapse choices for standalone habits keyed by habit ID
 let currentView = 'all'; // 'all' or 'today'
 let deferredPrompt = null; // Store install prompt event
 let notificationCheckInterval = null; // Interval for checking notifications
@@ -76,6 +77,7 @@ function loadHabits() {
     stackNames = Storage.loadStackNames();
     stackCollapseDate = _localDateStr(new Date());
     stackCollapse = Storage.loadStackCollapse(stackCollapseDate);
+    cardCollapse = Storage.loadCardCollapse(stackCollapseDate);
     console.log(`Loaded ${habits.length} habits from storage`);
 }
 
@@ -389,10 +391,14 @@ function handleHabitComplete(habitId, shouldComplete) {
         UI.showNotification(`"${habit.name}" marked as incomplete`, 'info');
     }
 
-    // A completion change hands the stack back to automatic collapsing (collapse once complete)
+    // A completion change hands the stack / habit back to automatic collapsing (collapse once done)
     if (habit.notificationTime && habit.notificationTime in stackCollapse) {
         delete stackCollapse[habit.notificationTime];
         Storage.saveStackCollapse(today, stackCollapse);
+    }
+    if (habitId in cardCollapse) {
+        delete cardCollapse[habitId];
+        Storage.saveCardCollapse(today, cardCollapse);
     }
 
     // Save changes
@@ -611,8 +617,17 @@ function getCallbacks() {
         onMoveUp: handleMoveUp,
         onMoveDown: handleMoveDown,
         onRenameStack: handleRenameStack,
-        onToggleStack: handleToggleStack
+        onToggleStack: handleToggleStack,
+        onToggleHabit: handleToggleHabit
     };
+}
+
+/**
+ * Remember a manual collapse/expand of a standalone habit for the rest of today
+ */
+function handleToggleHabit(habitId, collapsed) {
+    cardCollapse[habitId] = collapsed;
+    Storage.saveCardCollapse(stackCollapseDate, cardCollapse);
 }
 
 /**
@@ -749,6 +764,7 @@ function renderHabits() {
     if (stackCollapseDate !== todayStr) {
         stackCollapseDate = todayStr;
         stackCollapse = {};
+        cardCollapse = {};
     }
 
     UI.renderStackedHabitList(
@@ -756,7 +772,8 @@ function renderHabits() {
         container,
         callbacks,
         visible.filter(h => h.isLongTerm()),
-        stackCollapse
+        stackCollapse,
+        cardCollapse
     );
 
     // Update the drop-completed toggle state in the UI
@@ -1171,6 +1188,7 @@ function clearAllData() {
         habits = [];
         stackNames = {};
         stackCollapse = {};
+        cardCollapse = {};
         renderHabits();
         UI.showNotification('All data cleared', 'info');
     } else {

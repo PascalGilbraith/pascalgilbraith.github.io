@@ -320,6 +320,62 @@ main {
     line-height: 1.4;
 }
 
+.habit-toggle {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.habit-toggle:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.habit-toggle .toggle-icon {
+    display: inline-block;
+    font-size: 0.8rem;
+    transition: transform var(--transition);
+}
+
+.habit-card.collapsed .habit-toggle .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.habit-collapsed-status {
+    display: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.habit-collapsed-status.done {
+    color: var(--primary-dark);
+}
+
+.habit-card.collapsed .habit-collapsed-status {
+    display: inline;
+}
+
+.habit-card.collapsed .habit-header {
+    margin-bottom: 0;
+}
+
+.habit-card.collapsed {
+    padding-top: var(--spacing-sm);
+    padding-bottom: var(--spacing-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .habit-toggle .toggle-icon {
+        transition: none;
+    }
+}
+
 .habit-actions-header {
     display: flex;
     gap: var(--spacing-xs);

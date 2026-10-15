@@ -55,8 +55,9 @@ export function renderHabitList(habits, container, callbacks = {}) {
  * @param {Object} callbacks - Card callbacks plus optional onRenameStack(time, currentName)
  * @param {Array<Habit>} [longTermHabits=[]] - Long-term habits, shown in "Due now" and "Long-term" sections
  * @param {Object<string, boolean>} [stackCollapse={}] - Manual collapsed (true) / expanded (false) choice per stack time; stacks without one collapse when complete
+ * @param {Object<string, boolean>} [cardCollapse={}] - Same, per habit ID, for standalone habits (not in a stack)
  */
-export function renderStackedHabitList(items, container, callbacks = {}, longTermHabits = [], stackCollapse = {}) {
+export function renderStackedHabitList(items, container, callbacks = {}, longTermHabits = [], stackCollapse = {}, cardCollapse = {}) {
     if (!container) {
         console.error('Container element not provided');
         return;
@@ -107,7 +108,11 @@ export function renderStackedHabitList(items, container, callbacks = {}, longTer
             fragment.appendChild(renderStack(item, callbacks, stackCollapse[item.time]));
         } else {
             const peers = item.habit.notificationTime ? [item.habit] : untimed;
-            fragment.appendChild(renderHabitCard(item.habit, callbacks, _moveOptions(item.habit, peers)));
+            fragment.appendChild(renderHabitCard(item.habit, callbacks, {
+                ..._moveOptions(item.habit, peers),
+                collapsible: true,
+                collapsed: cardCollapse[item.habit.id]
+            }));
         }
     }
 
@@ -246,6 +251,8 @@ function _restoreOpenCalendars(container, ids) {
  * @param {Object} options - Rendering options
  * @param {boolean} [options.canMoveUp=true] - Whether the move-up button is enabled
  * @param {boolean} [options.canMoveDown=true] - Whether the move-down button is enabled
+ * @param {boolean} [options.collapsible=false] - Add a collapse toggle (for standalone habits only)
+ * @param {boolean} [options.collapsed] - Manual collapsed state; undefined collapses only when done today
  * @returns {HTMLElement} Habit card element
  */
 export function renderHabitCard(habit, callbacks = {}, options = {}) {
@@ -298,10 +305,18 @@ export function renderHabitCard(habit, callbacks = {}, options = {}) {
             </button>`;
     }
 
+    // Only standalone normal habits can be collapsed (not ones inside a stack, nor long-term habits)
+    const collapsible = options.collapsible === true && !isLongTerm;
+    const collapsed = collapsible && (typeof options.collapsed === 'boolean' ? options.collapsed : isCompleted);
+    const bodyId = `habit-body-${habit.id}`.replace(/[^A-Za-z0-9_-]/g, '_');
+    const statusText = isCompleted ? '✓ Done today' : (isActiveToday ? 'To do' : 'Not scheduled today');
+
     card.innerHTML = `
         <div class="habit-header">
+            ${collapsible ? `<button class="habit-toggle" type="button" aria-controls="${escapeAttr(bodyId)}"><span class="toggle-icon" aria-hidden="true">▼</span></button>` : ''}
             <div class="habit-title-row">
                 <h3 class="habit-name">${escapeHtml(habit.name)}</h3>
+                ${collapsible ? `<span class="habit-collapsed-status ${isCompleted ? 'done' : ''}">${escapeHtml(statusText)}</span>` : ''}
                 ${habit.tags && habit.tags.length > 0 ? `<div class="habit-tags">${habit.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
             </div>
             <div class="habit-actions-header">
@@ -312,6 +327,7 @@ export function renderHabitCard(habit, callbacks = {}, options = {}) {
             </div>
         </div>
         
+        <div class="habit-card-body" id="${escapeAttr(bodyId)}">
         ${habit.notes ? `<div class="habit-notes">${escapeHtml(habit.notes)}</div>` : ''}
         
         <div class="habit-info">${infoHtml}
@@ -323,7 +339,27 @@ export function renderHabitCard(habit, callbacks = {}, options = {}) {
         </div>
         
         ${renderCalendar(habit)}
+        </div>
     `;
+
+    if (collapsible) {
+        const toggleBtn = card.querySelector('.habit-toggle');
+        const body = card.querySelector('.habit-card-body');
+        const applyCollapsed = (isCollapsed) => {
+            card.classList.toggle('collapsed', isCollapsed);
+            body.classList.toggle('hidden', isCollapsed);
+            toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+            toggleBtn.setAttribute('aria-label', `${isCollapsed ? 'Expand' : 'Collapse'} ${habit.name}`);
+            toggleBtn.title = isCollapsed ? 'Expand habit' : 'Collapse habit';
+        };
+        applyCollapsed(collapsed);
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const next = !card.classList.contains('collapsed');
+            applyCollapsed(next);
+            if (callbacks.onToggleHabit) callbacks.onToggleHabit(habit.id, next);
+        });
+    }
 
     // Attach event listeners
     const deleteBtn = card.querySelector('.habit-delete');
